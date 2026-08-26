@@ -1,4 +1,4 @@
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 const usageWindowSchema = z
@@ -77,12 +77,12 @@ const PROVIDERS = {
   },
   "claude-code": {
     label: "Claude Code",
-    usageKey: "claudeCode",
+    usageKey: "claude-code",
     windowLabels: ["Current session", "Weekly limit"],
   },
   "acp-cursor": {
     label: "Cursor",
-    usageKey: "cursor",
+    usageKey: "acp-cursor",
     windowLabels: ["Plan usage", "On-demand spend"],
   },
 } as const;

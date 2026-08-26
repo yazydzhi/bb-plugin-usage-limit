@@ -4,7 +4,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.35",
-    "bbPluginSdk": "^0.4.1"
+    "bbPluginSdk": ">=0.4.22"
   },
   "bb": {
     "name": "Usage limits below chat",
@@ -25,13 +25,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@get-bb/plugin-sdk": "file:vendor/get-bb-plugin-sdk-0.4.22.tgz",
+    "@radix-ui/react-dialog": "^1.1.19",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "better-sqlite3": "^12.0.0",
     "hono": "^4.11.9",
     "typescript": "^5.7.0",
-    "@radix-ui/react-dialog": "^1.1.19",
     "vaul": "^1.1.2"
   },
   "description": "Show live provider subscription usage directly below the chat input.",

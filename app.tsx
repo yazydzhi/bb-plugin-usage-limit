@@ -1,4 +1,4 @@
-import { definePluginApp } from "@bb/plugin-sdk/app";
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
 const REFRESH_INTERVAL_MS = 60_000;
 const ROOT_ATTRIBUTE = "data-bb-usage-limit";
