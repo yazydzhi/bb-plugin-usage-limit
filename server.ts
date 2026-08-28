@@ -1,5 +1,11 @@
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import {
+  getMessages,
+  LOCALE_OPTIONS,
+  resolveLocale,
+  statusMessage as localizedStatusMessage,
+} from "./lib/i18n";
 
 const usageWindowSchema = z
   .object({
@@ -8,28 +14,6 @@ const usageWindowSchema = z
     resetsAt: z.string().nullable(),
   })
   .passthrough();
-
-const providerUsageSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      status: z.literal("ok"),
-      accountEmail: z.string().nullable(),
-      planLabel: z.string().nullable(),
-      windows: z.array(usageWindowSchema),
-    })
-    .passthrough(),
-  z.object({ status: z.literal("not_installed") }).passthrough(),
-  z.object({ status: z.literal("unauthenticated") }).passthrough(),
-  z.object({ status: z.literal("expired") }).passthrough(),
-  z
-    .object({
-      status: z.literal("error"),
-      message: z.string(),
-      accountEmail: z.string().nullable().optional(),
-      planLabel: z.string().nullable().optional(),
-    })
-    .passthrough(),
-]);
 
 const selectedUsageSchema = z
   .object({
@@ -113,9 +97,24 @@ function aggregateWindows<T extends { label: string }>(
  * provider is the authoritative fallback. Usage is read from the thread host,
  * not blindly from the primary machine.
  */
-export default function plugin(bb: BbPluginApi) {
+export default async function plugin(bb: BbPluginApi) {
+  const settings = bb.settings.define({
+    locale: {
+      type: "select",
+      label: "Language",
+      description:
+        "UI language for the usage row under the composer. auto follows your browser language (en / ru / ko).",
+      options: [...LOCALE_OPTIONS],
+      default: "auto",
+    },
+  });
+
   bb.rpc.register(rpcContract, {
     usage: async ({ providerId: selectedProviderId, threadId }) => {
+      const { locale: localeSetting } = await settings.get();
+      const locale = resolveLocale(localeSetting);
+      const messages = getMessages(locale);
+
       const thread = threadId
         ? await bb.sdk.threads.get({ threadId })
         : null;
@@ -130,7 +129,7 @@ export default function plugin(bb: BbPluginApi) {
           planLabel: null,
           accountEmail: null,
           windows: [],
-          message: "현재 선택한 공급자는 사용량 한도를 제공하지 않습니다.",
+          message: messages.unsupportedProvider,
         };
       }
 
@@ -141,6 +140,18 @@ export default function plugin(bb: BbPluginApi) {
         environment ? { hostId: environment.hostId } : undefined,
       );
       const usage = allUsage[provider.usageKey];
+
+      if (!usage) {
+        return {
+          providerId,
+          providerLabel: provider.label,
+          status: "error" as const,
+          planLabel: null,
+          accountEmail: null,
+          windows: [],
+          message: messages.usageLoadFailed,
+        };
+      }
 
       return {
         providerId,
@@ -158,7 +169,15 @@ export default function plugin(bb: BbPluginApi) {
           usage.status === "ok"
             ? aggregateWindows(usage.windows, provider)
             : [],
-        message: usage.status === "error" ? usage.message : null,
+        message:
+          usage.status === "error"
+            ? (usage.message ??
+              localizedStatusMessage(messages, {
+                providerLabel: provider.label,
+                status: "error",
+                message: null,
+              }))
+            : null,
       };
     },
   });

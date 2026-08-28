@@ -40,6 +40,21 @@ bb plugin install .
   visible in every BB theme.
 - The reset hint shows the window that resets soonest.
 
+## Language
+
+The composer row supports **English**, **Russian**, and **Korean** (the original UI
+strings). By default the plugin follows your browser language (`auto`).
+
+```sh
+bb plugin config usage-limit set locale en   # English
+bb plugin config usage-limit set locale ru   # Russian
+bb plugin config usage-limit set locale ko   # Korean
+bb plugin config usage-limit set locale auto # browser default
+bb plugin reload usage-limit
+```
+
+You can also change **Language** under Settings → Plugins → Usage limits below chat.
+
 ## Implementation note
 
 The public BB composer slot only renders *above* the input, so the UI is a

@@ -1,4 +1,13 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import {
+  getMessages,
+  resetLabel,
+  resolveLocale,
+  statusMessage,
+  windowLabel,
+  type Locale,
+  type Messages,
+} from "./lib/i18n";
 
 const REFRESH_INTERVAL_MS = 60_000;
 const ROOT_ATTRIBUTE = "data-bb-usage-limit";
@@ -24,6 +33,11 @@ type UsageResponse = {
   accountEmail: string | null;
   windows: UsageWindow[];
   message: string | null;
+};
+
+type PluginSettingsResponse = {
+  ok?: boolean;
+  values?: { locale?: string };
 };
 
 /**
@@ -57,62 +71,8 @@ const STYLES = `
 [${ROOT_ATTRIBUTE}] .bb-ul-refresh:hover { color: var(--foreground, #111827); background: var(--muted, #e5e7eb); }
 `;
 
-/** Host-daemon window labels, shortened for the one-line row. */
-const WINDOW_LABELS: Record<string, string> = {
-  "Current session": "세션",
-  "Weekly limit": "주간",
-  "Plan usage": "플랜",
-  "On-demand spend": "추가 사용",
-};
-
-function windowLabel(label: string): string {
-  return WINDOW_LABELS[label] ?? label;
-}
-
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
-}
-
-function resetLabel(resetsAt: string | null): string | null {
-  if (!resetsAt) return null;
-  const resetAt = new Date(resetsAt).getTime();
-  if (Number.isNaN(resetAt)) return null;
-
-  const minutes = Math.round((resetAt - Date.now()) / 60_000);
-  if (minutes <= 0) return "곧 초기화";
-  if (minutes < 60) return `${minutes}분 후 초기화`;
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (hours < 24) {
-    return remainingMinutes > 0
-      ? `${hours}시간 ${remainingMinutes}분 후 초기화`
-      : `${hours}시간 후 초기화`;
-  }
-
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-  return remainingHours > 0
-    ? `${days}일 ${remainingHours}시간 후 초기화`
-    : `${days}일 후 초기화`;
-}
-
-function statusMessage(usage: UsageResponse): string {
-  const provider = usage.providerLabel ?? "현재 공급자";
-  switch (usage.status) {
-    case "unauthenticated":
-      return `${provider} 계정에 로그인해 주세요.`;
-    case "expired":
-      return `${provider} 로그인이 만료되었습니다.`;
-    case "not_installed":
-      return `${provider} CLI가 설치되어 있지 않습니다.`;
-    case "error":
-      return usage.message ?? "사용량 정보를 불러올 수 없습니다.";
-    case "unsupported":
-      return usage.message ?? "현재 공급자는 사용량 한도를 제공하지 않습니다.";
-    default:
-      return "표시할 구독 한도가 없습니다.";
-  }
 }
 
 function makeElement<K extends keyof HTMLElementTagNameMap>(
@@ -133,6 +93,7 @@ function render(
   roots: ReadonlySet<HTMLElement>,
   state: RenderState,
   busy: boolean,
+  messages: Messages,
   onRefresh: () => void,
 ) {
   for (const root of roots) {
@@ -151,15 +112,15 @@ function render(
     const content = makeElement("div", "bb-ul-items");
     if (state.kind === "loading") {
       const message = makeElement("span", "bb-ul-message");
-      message.textContent = "사용량 불러오는 중…";
+      message.textContent = messages.loadingUsage;
       content.append(message);
     } else if (state.kind === "error") {
       const message = makeElement("span", "bb-ul-message");
-      message.textContent = "사용량 정보를 불러올 수 없습니다.";
+      message.textContent = messages.usageLoadFailed;
       content.append(message);
     } else if (!ready || !hasWindows) {
       const message = makeElement("span", "bb-ul-message");
-      message.textContent = statusMessage(state.usage);
+      message.textContent = statusMessage(messages, state.usage);
       content.append(message);
     } else {
       for (const window of ready.windows) {
@@ -169,14 +130,14 @@ function render(
           ready.providerLabel,
           ready.planLabel,
           window.label,
-          `${Math.round(percent)}% 사용`,
-          resetLabel(window.resetsAt),
+          messages.percentUsed(Math.round(percent)),
+          resetLabel(messages, window.resetsAt),
         ]
           .filter(Boolean)
           .join(" · ");
 
         const name = makeElement("span", "bb-ul-name");
-        name.textContent = windowLabel(window.label);
+        name.textContent = windowLabel(messages, window.label);
         const track = makeElement("span", "bb-ul-track");
         const fill = makeElement("span", "bb-ul-fill");
         fill.style.width = `${Math.max(percent, 3)}%`;
@@ -190,8 +151,7 @@ function render(
         content.append(item);
       }
 
-      // One reset hint for the whole row: the window that resets soonest.
-      const reset = resetLabel(soonestReset(ready.windows));
+      const reset = resetLabel(messages, soonestReset(ready.windows));
       if (reset) {
         const resetElement = makeElement("span", "bb-ul-reset");
         resetElement.textContent = `· ${reset}`;
@@ -199,8 +159,6 @@ function render(
       }
     }
 
-    // `.bb-ul-items` takes the free space, so the email sits at the right edge
-    // with the usage windows on the left.
     let email: HTMLSpanElement | null = null;
     if (ready?.accountEmail) {
       email = makeElement("span", "bb-ul-email");
@@ -212,8 +170,8 @@ function render(
 
     const refresh = makeElement("button", "bb-ul-refresh");
     refresh.type = "button";
-    refresh.title = "사용량 새로 고침";
-    refresh.setAttribute("aria-label", "사용량 새로 고침");
+    refresh.title = messages.refreshUsage;
+    refresh.setAttribute("aria-label", messages.refreshUsage);
     refresh.textContent = "↻";
     refresh.addEventListener("click", () => onRefresh());
     shell.append(content, ...(email ? [email] : []), refresh);
@@ -251,6 +209,19 @@ function selectedProviderId(): string | null {
   return null;
 }
 
+async function fetchPluginLocale(signal: AbortSignal): Promise<Locale> {
+  try {
+    const response = await fetch("/api/v1/plugins/usage-limit/settings", {
+      signal,
+    });
+    if (!response.ok) return resolveLocale(undefined, navigator.language);
+    const body = (await response.json()) as PluginSettingsResponse;
+    return resolveLocale(body.values?.locale, navigator.language);
+  } catch {
+    return resolveLocale(undefined, navigator.language);
+  }
+}
+
 async function fetchUsage(
   signal: AbortSignal,
   providerId: string | null,
@@ -277,9 +248,6 @@ export default definePluginApp((app) => {
       style.textContent = STYLES;
       document.head.append(style);
 
-      // A previous mount that was torn down without its dispose running (hot
-      // reload, aborted signal) leaves orphan rows behind. Start from a clean
-      // document so those never stack up with ours.
       for (const orphan of Array.from(
         document.querySelectorAll<HTMLElement>(ROOT_SELECTOR),
       )) {
@@ -292,8 +260,17 @@ export default definePluginApp((app) => {
       let inFlight: AbortController | null = null;
       let displayedProviderId: string | null = null;
       let stopped = false;
+      let locale: Locale = resolveLocale(undefined, navigator.language);
+      let messages = getMessages(locale);
 
-      const paint = () => render(roots, state, busy, refresh);
+      const paint = () => render(roots, state, busy, messages, refresh);
+
+      void fetchPluginLocale(signal).then((nextLocale) => {
+        if (signal.aborted) return;
+        locale = nextLocale;
+        messages = getMessages(locale);
+        paint();
+      });
 
       const attachRoots = () => {
         const footers = document.querySelectorAll<HTMLElement>(
@@ -318,10 +295,6 @@ export default definePluginApp((app) => {
           wanted.add(root);
         }
 
-        // A composer re-render can splice a node between the footer and our row,
-        // which used to make the next pass mint a second row while the old one
-        // stayed connected. Anything that is no longer a footer's direct sibling
-        // is a leftover, so drop it instead of letting rows accumulate.
         for (const stray of Array.from(
           document.querySelectorAll<HTMLElement>(ROOT_SELECTOR),
         )) {
@@ -345,8 +318,6 @@ export default definePluginApp((app) => {
         if (changed) paint();
       };
 
-      /** `silent` keeps the last reading on screen so the row does not flicker
-       * back to a loading message on every poll. */
       const refresh = (options?: { silent?: boolean }) => {
         if (stopped) return;
         inFlight?.abort();
@@ -361,9 +332,14 @@ export default definePluginApp((app) => {
           busy = false;
         }
         paint();
-        void fetchUsage(controller.signal, providerId, currentThreadId())
-          .then((usage) => {
+        void Promise.all([
+          fetchPluginLocale(controller.signal),
+          fetchUsage(controller.signal, providerId, currentThreadId()),
+        ])
+          .then(([nextLocale, usage]) => {
             if (!controller.signal.aborted) {
+              locale = nextLocale;
+              messages = getMessages(locale);
               state = { kind: "ready", usage };
               busy = false;
               paint();
@@ -385,8 +361,7 @@ export default definePluginApp((app) => {
         attachRoots();
         if (selectedProviderId() !== displayedProviderId) refresh();
       };
-      // Our own render writes into the observed subtree, so coalesce callbacks
-      // into one pass per frame instead of reacting to every mutation record.
+
       let scheduled = false;
       const observer = new MutationObserver(() => {
         if (stopped || scheduled) return;
