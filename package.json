@@ -4,7 +4,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.35",
-    "bbPluginSdk": ">=0.4.22"
+    "bbPluginSdk": ">=0.4.21"
   },
   "bb": {
     "name": "Usage limits below chat",
